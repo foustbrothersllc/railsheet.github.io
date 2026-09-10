@@ -44,3 +44,25 @@ export function formatRelativeTime(isoTimestamp: string): string {
 export function initials(first: string, last: string): string {
   return `${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase();
 }
+
+// Distinct, deterministic colors for staged/numbered trains — the same
+// train number always maps to the same color, so a trailer keeps
+// identifying which train it came from even after it's promoted to At
+// Rail. Picked to stay visually apart from the app's existing meaning-
+// colors (amber = at rail, blue = departed, orange = hot, red = redtag).
+const TRAIN_PALETTE = [
+  "#9B6BFF", // violet
+  "#2DD4BF", // teal
+  "#F472B6", // pink
+  "#A3E635", // lime
+  "#E879F9", // fuchsia
+  "#38BDF8", // sky
+];
+
+export function trainColor(trainNumber: string): string {
+  let hash = 0;
+  for (let i = 0; i < trainNumber.length; i++) {
+    hash = (hash * 31 + trainNumber.charCodeAt(i)) >>> 0;
+  }
+  return TRAIN_PALETTE[hash % TRAIN_PALETTE.length];
+}
