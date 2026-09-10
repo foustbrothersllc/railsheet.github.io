@@ -1,4 +1,8 @@
-export type TrailerStatus = "at_rail" | "departed";
+// "staged" = part of an upcoming/numbered train, staged separately from the
+// active At Rail list until an admin promotes it (or it auto-promotes once
+// At Rail empties out). Invisible to drivers the same way "departed" trailers
+// simply aren't in their list — see hooks/useTrailers.ts.
+export type TrailerStatus = "at_rail" | "departed" | "staged";
 
 export interface Trailer {
   id: string;
@@ -24,6 +28,12 @@ export interface Trailer {
   // and the trailer is being newly created, the database auto-marks it Hot if
   // this date is before today. Stored as an ISO date string ("YYYY-MM-DD").
   due_date: string | null;
+  // Which numbered train a staged trailer belongs to (e.g. "42"). Set by the
+  // admin at import time; the database uses it to decide a brand-new row's
+  // status (see supabase_migration_staged_trains.sql). Sticks around after
+  // promotion to At Rail just as a record of where it came from — nothing
+  // reads it once a trailer is no longer staged.
+  train_number: string | null;
   assigned_to_id: string | null;
   assigned_driver_name: string | null;
   assigned_driver_emp_id: string | null;
