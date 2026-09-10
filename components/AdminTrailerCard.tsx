@@ -1,7 +1,7 @@
 "use client";
 
 import { Trailer, Profile } from "@/lib/types";
-import { cn, formatRelativeTime } from "@/lib/utils";
+import { cn, formatRelativeTime, trainColor } from "@/lib/utils";
 import { ArrowUpCircle, Check, Flame, Pencil, RotateCcw, Send, Tag, Trash2, User, Snowflake, MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
@@ -101,7 +101,30 @@ export function AdminTrailerCard({
         selectMode && selected ? "border-amber ring-1 ring-amber" : "border-yard-border"
       )}
     >
-      <div className={cn("w-1.5 shrink-0", isDeparted ? "bg-depart" : isStaged ? "bg-train" : "bg-amber")} />
+      {/* Left identity strip: Departed always wins (blue). A trailer that's
+          part of a numbered train (staged OR already promoted to At Rail —
+          train_number sticks around) gets a color unique to that train
+          number, so you can still tell which train it came from after
+          promotion. A staged trailer with no number gets a generic purple
+          (matches the "Staged Train" grouping). Everything else falls back
+          to plain amber. */}
+      <div
+        className={cn(
+          "w-1.5 shrink-0",
+          isDeparted
+            ? "bg-depart"
+            : trailer.train_number
+            ? undefined
+            : isStaged
+            ? "bg-train"
+            : "bg-amber"
+        )}
+        style={
+          !isDeparted && trailer.train_number
+            ? { backgroundColor: trainColor(trailer.train_number) }
+            : undefined
+        }
+      />
       {selectMode && (
         <button
           onClick={onToggleSelect}
