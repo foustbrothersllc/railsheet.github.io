@@ -14,6 +14,7 @@ let globalTrailers: Trailer[] = [];
 let globalAtRail: Trailer[] = [];
 let globalCold: Trailer[] = [];
 let globalDeparted: Trailer[] = [];
+let globalStaged: Trailer[] = [];
 let isLoading = false;
 let debounceRef: NodeJS.Timeout | null = null;
 
@@ -22,6 +23,11 @@ export function useTrailers(hideColdfromDrivers = true) {
   const [atRail, setAtRail] = useState<Trailer[]>(globalAtRail);
   const [cold, setCold] = useState<Trailer[]>(globalCold);
   const [departed, setDeparted] = useState<Trailer[]>(globalDeparted);
+  // status "staged" trailers (an upcoming/numbered train not yet promoted to At
+  // Rail) are simply never returned to a driver-facing caller — unlike Cold,
+  // which is data-hidden via hideColdfromDrivers, staged trailers are excluded
+  // by status alone, so there's no separate flag to remember to check here.
+  const [staged, setStaged] = useState<Trailer[]>(globalStaged);
   const [loading, setLoading] = useState(isLoading);
 
   useEffect(() => {
@@ -31,6 +37,7 @@ export function useTrailers(hideColdfromDrivers = true) {
       setAtRail(globalAtRail);
       setCold(globalCold);
       setDeparted(globalDeparted);
+      setStaged(globalStaged);
       setLoading(false);
     }
   }, []);
@@ -63,13 +70,22 @@ export function useTrailers(hideColdfromDrivers = true) {
         .filter((t) => t.status === "departed" && !isHiddenLikeCold(t))
         .sort((a, b) => compareEquipmentNumbers(a.equipment_number, b.equipment_number));
 
+      // Oldest first, so grouping by train_number downstream naturally puts
+      // whichever train was staged first at the front — the one due to
+      // auto-promote next when At Rail empties out.
+      const stagedList = trailers
+        .filter((t) => t.status === "staged")
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+
       globalAtRail = atRailList;
       globalCold = coldList;
       globalDeparted = departedList;
+      globalStaged = stagedList;
 
       setAtRail(atRailList);
       setCold(hideColdfromDrivers ? [] : coldList);
       setDeparted(departedList);
+      setStaged(stagedList);
     }
 
     isLoading = false;
@@ -128,6 +144,10 @@ export function useTrailers(hideColdfromDrivers = true) {
         .filter((t) => t.status === "departed" && !isHiddenLikeCold(t))
         .sort((a, b) => compareEquipmentNumbers(a.equipment_number, b.equipment_number));
 
+      const newStaged = trailers
+        .filter((t) => t.status === "staged")
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+
       if (JSON.stringify(newAtRail) !== JSON.stringify(globalAtRail)) {
         globalAtRail = newAtRail;
         setAtRail(newAtRail);
@@ -142,6 +162,11 @@ export function useTrailers(hideColdfromDrivers = true) {
         globalDeparted = newDeparted;
         setDeparted(newDeparted);
       }
+
+      if (JSON.stringify(newStaged) !== JSON.stringify(globalStaged)) {
+        globalStaged = newStaged;
+        setStaged(newStaged);
+      }
     }
   }
 
@@ -150,5 +175,5 @@ export function useTrailers(hideColdfromDrivers = true) {
     await reloadTrailers();
   }
 
-  return { atRail, cold, departed, loading, refresh };
+  return { atRail, cold, departed, staged, loading, refresh };
 }
