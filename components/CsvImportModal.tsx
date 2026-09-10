@@ -114,10 +114,15 @@ export function CsvImportModal({ open, onClose }: CsvImportModalProps) {
       destination_sort_type: r.destination_sort_type || null,
       load_percentage: r.load_percentage,
       due_date: r.due_date,
-      // Only set on brand-new rows by the insert-only trigger — see
-      // supabase_migration_staged_trains.sql. Left null for "at_rail" mode so
-      // a re-import never accidentally re-stages an already-live trailer.
-      train_number: importMode === "train" ? trainNumber.trim() : null,
+      // A train number is optional here — the batch can be "Numbered" with
+      // no actual number and just shows as a generic "Staged Train" on the
+      // dashboard. Left null for "at_rail" mode so a re-import never
+      // accidentally re-stages an already-live trailer.
+      train_number: importMode === "train" ? trainNumber.trim() || null : null,
+      // Explicitly staged on brand-new rows only — this key is never
+      // included for duplicates (see writeImport), so re-importing an
+      // existing equipment number never bounces its status around.
+      ...(importMode === "train" ? { status: "staged" as const } : {}),
     };
   }
 
@@ -362,22 +367,23 @@ export function CsvImportModal({ open, onClose }: CsvImportModalProps) {
               <input
                 value={trainNumber}
                 onChange={(e) => setTrainNumber(e.target.value)}
-                placeholder="Train number (e.g. 42)"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && validRows.length > 0) {
+                    e.preventDefault();
+                    handleImport();
+                  }
+                }}
+                placeholder="Train Number"
                 className="w-full h-9 px-2.5 rounded-md bg-yard-bg border border-yard-border text-sm focus:border-train outline-none"
               />
             )}
           </div>
 
-          <Button
-            className="w-full"
-            disabled={
-              validRows.length === 0 ||
-              (importMode === "train" && trainNumber.trim() === "")
-            }
-            onClick={handleImport}
-          >
+          <Button className="w-full" disabled={validRows.length === 0} onClick={handleImport}>
             {importMode === "train"
-              ? `Stage Train ${trainNumber.trim() || "…"} (${validRows.length})`
+              ? trainNumber.trim()
+                ? `Stage Train ${trainNumber.trim()} (${validRows.length})`
+                : `Stage Train (${validRows.length})`
               : `Fix & Import (${validRows.length})`}
           </Button>
         </div>
