@@ -2,7 +2,7 @@
 
 import { Trailer, Profile } from "@/lib/types";
 import { cn, formatRelativeTime } from "@/lib/utils";
-import { Check, Flame, Pencil, RotateCcw, Send, Tag, Trash2, User, Snowflake, MessageSquare } from "lucide-react";
+import { ArrowUpCircle, Check, Flame, Pencil, RotateCcw, Send, Tag, Trash2, User, Snowflake, MessageSquare } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 
@@ -17,6 +17,9 @@ interface AdminTrailerCardProps {
   onMarkDeparted: () => void;
   onDelete: () => void;
   onViewDetails: () => void;
+  // Only relevant for a staged (upcoming train) trailer — promotes it to At
+  // Rail individually. Omitted entirely for at_rail/departed cards.
+  onPromoteToAtRail?: () => void;
   selectMode?: boolean;
   selected?: boolean;
   onToggleSelect?: () => void;
@@ -33,6 +36,7 @@ export function AdminTrailerCard({
   onMarkDeparted,
   onDelete,
   onViewDetails,
+  onPromoteToAtRail,
   selectMode = false,
   selected = false,
   onToggleSelect,
@@ -42,6 +46,7 @@ export function AdminTrailerCard({
   const [unreadCount, setUnreadCount] = useState(0);
   const [totalNotes, setTotalNotes] = useState(0);
   const isDeparted = trailer.status === "departed";
+  const isStaged = trailer.status === "staged";
 
   useEffect(() => {
     if (trailer.flag_created_by) {
@@ -96,7 +101,7 @@ export function AdminTrailerCard({
         selectMode && selected ? "border-amber ring-1 ring-amber" : "border-yard-border"
       )}
     >
-      <div className={cn("w-1.5 shrink-0", isDeparted ? "bg-depart" : "bg-amber")} />
+      <div className={cn("w-1.5 shrink-0", isDeparted ? "bg-depart" : isStaged ? "bg-train" : "bg-amber")} />
       {selectMode && (
         <button
           onClick={onToggleSelect}
@@ -196,7 +201,17 @@ export function AdminTrailerCard({
         >
           <Tag size={16} />
         </button>
-        {!isDeparted && (
+        {isStaged && (
+          <button
+            onClick={onPromoteToAtRail}
+            title="Promote to At Rail"
+            aria-label="Promote to At Rail"
+            className="h-9 w-9 flex items-center justify-center rounded-full text-yard-muted hover:text-train hover:bg-train/10"
+          >
+            <ArrowUpCircle size={16} />
+          </button>
+        )}
+        {!isDeparted && !isStaged && (
           <button
             onClick={onMarkDeparted}
             title="Move to Departed"
