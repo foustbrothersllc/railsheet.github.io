@@ -4,8 +4,13 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { createClient } from "@/lib/supabase/client";
 import { parseSheetRows, recomputeIssues } from "@/lib/importParser";
-import { ParsedTrailerRow } from "@/lib/types";
+import { ParsedTrailerRow, Trailer } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import {
+  DuplicateResolutionPanel,
+  DuplicateRow,
+  ResolvedFields,
+} from "@/components/DuplicateResolutionPanel";
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import { useState } from "react";
 
@@ -14,7 +19,7 @@ interface PasteCSVModalProps {
   onClose: () => void;
 }
 
-type Stage = "paste" | "review" | "importing" | "done";
+type Stage = "paste" | "review" | "checking" | "duplicates" | "importing" | "done";
 
 export function PasteCSVModal({ open, onClose }: PasteCSVModalProps) {
   const supabase = createClient();
@@ -23,6 +28,16 @@ export function PasteCSVModal({ open, onClose }: PasteCSVModalProps) {
   const [rows, setRows] = useState<ParsedTrailerRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [importedCount, setImportedCount] = useState(0);
+  // Where this batch goes: straight onto the live At Rail list (existing
+  // behavior), or staged as a separate, not-yet-promoted numbered train so it
+  // doesn't mix in with what's currently at rail.
+  const [importMode, setImportMode] = useState<"at_rail" | "train">("at_rail");
+  const [trainNumber, setTrainNumber] = useState("");
+  // Rows whose equipment number already exists in the database — held here
+  // while the duplicate-resolution panel is shown, alongside the rows that
+  // are genuinely new and can go straight into the write.
+  const [duplicates, setDuplicates] = useState<DuplicateRow[]>([]);
+  const [freshRows, setFreshRows] = useState<ParsedTrailerRow[]>([]);
 
   function reset() {
     setStage("paste");
@@ -30,6 +45,10 @@ export function PasteCSVModal({ open, onClose }: PasteCSVModalProps) {
     setRows([]);
     setError(null);
     setImportedCount(0);
+    setImportMode("at_rail");
+    setTrainNumber("");
+    setDuplicates([]);
+    setFreshRows([]);
   }
 
   function handleClose() {
@@ -80,11 +99,14 @@ export function PasteCSVModal({ open, onClose }: PasteCSVModalProps) {
     });
   }
 
-  async function handleImport() {
-    setStage("importing");
-    const cleanRows = rows.filter((r) => r.issues.length === 0);
-
-    const payload = cleanRows.map((r) => ({
+  // Deliberately omit status/assignment/flag/hot fields here. On INSERT
+  // (brand-new equipment number) they fall back to the table's defaults
+  // (status = 'at_rail', everything else null/false) — exactly right for
+  // a new trailer. On UPDATE (equipment number already exists), leaving
+  // them out means they're never touched, so re-importing the same data
+  // never bounces an already-Departed trailer back to At Rail.
+  function rowToPayload(r: ParsedTrailerRow) {
+    return {
       equipment_number: r.equipment_number!,
       pickup_number: r.pickup_number!,
       origin: r.origin || null,
@@ -93,7 +115,87 @@ export function PasteCSVModal({ open, onClose }: PasteCSVModalProps) {
       destination_sort_type: r.destination_sort_type || null,
       load_percentage: r.load_percentage,
       due_date: r.due_date,
+      // Only set on brand-new rows by the insert-only trigger — see
+      // supabase_migration_staged_trains.sql. Left null for "at_rail" mode so
+      // a re-import never accidentally re-stages an already-live trailer.
+      train_number: importMode === "train" ? trainNumber.trim() : null,
+    };
+  }
+
+  async function handleImport() {
+    setStage("checking");
+    const cleanRows = rows.filter((r) => r.issues.length === 0);
+    const equipNums = cleanRows.map((r) => r.equipment_number!);
+
+    const { data: existing, error: lookupError } = await supabase
+      .from("trailers")
+      .select("*")
+      .in("equipment_number", equipNums);
+
+    if (lookupError) {
+      setError(lookupError.message);
+      setStage("review");
+      return;
+    }
+
+    const existingByEquip = new Map<string, Trailer>(
+      (existing ?? []).map((t: Trailer) => [t.equipment_number, t])
+    );
+
+    const dups: DuplicateRow[] = [];
+    const fresh: ParsedTrailerRow[] = [];
+    for (const r of cleanRows) {
+      const match = existingByEquip.get(r.equipment_number!);
+      if (match) {
+        const p = rowToPayload(r);
+        dups.push({
+          equipment_number: r.equipment_number!,
+          existing: match,
+          incoming: {
+            pickup_number: p.pickup_number,
+            origin: p.origin,
+            origin_sort_type: p.origin_sort_type,
+            destination: p.destination,
+            destination_sort_type: p.destination_sort_type,
+            load_percentage: p.load_percentage,
+            due_date: p.due_date,
+            train_number: p.train_number,
+          },
+        });
+      } else {
+        fresh.push(r);
+      }
+    }
+
+    if (dups.length > 0) {
+      setDuplicates(dups);
+      setFreshRows(fresh);
+      setStage("duplicates");
+      return;
+    }
+
+    await writeImport(fresh.map(rowToPayload), {});
+  }
+
+  async function writeImport(
+    freshPayload: ReturnType<typeof rowToPayload>[],
+    resolvedByEquip: Record<string, ResolvedFields>
+  ) {
+    setStage("importing");
+
+    const resolvedPayload = Object.entries(resolvedByEquip).map(([equipment_number, r]) => ({
+      equipment_number,
+      pickup_number: r.pickup_number ?? "",
+      origin: r.origin,
+      origin_sort_type: r.origin_sort_type,
+      destination: r.destination,
+      destination_sort_type: r.destination_sort_type,
+      load_percentage: r.load_percentage,
+      due_date: r.due_date,
+      train_number: r.train_number,
     }));
+
+    const payload = [...freshPayload, ...resolvedPayload];
 
     const { error } = await supabase
       .from("trailers")
@@ -101,7 +203,7 @@ export function PasteCSVModal({ open, onClose }: PasteCSVModalProps) {
 
     if (error) {
       setError(error.message);
-      setStage("review");
+      setStage(duplicates.length > 0 ? "duplicates" : "review");
       return;
     }
 
@@ -222,6 +324,44 @@ export function PasteCSVModal({ open, onClose }: PasteCSVModalProps) {
             </p>
           )}
 
+          <div className="space-y-2 rounded-card border border-yard-border p-3">
+            <p className="text-xs uppercase tracking-wide text-yard-muted">Import As</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setImportMode("at_rail")}
+                className={cn(
+                  "flex-1 h-9 rounded-card border text-xs font-semibold",
+                  importMode === "at_rail"
+                    ? "bg-amber/15 border-amber text-amber"
+                    : "bg-yard-bg border-yard-border text-yard-muted hover:border-yard-borderLight"
+                )}
+              >
+                Add to At Rail
+              </button>
+              <button
+                type="button"
+                onClick={() => setImportMode("train")}
+                className={cn(
+                  "flex-1 h-9 rounded-card border text-xs font-semibold",
+                  importMode === "train"
+                    ? "bg-train/15 border-train text-train"
+                    : "bg-yard-bg border-yard-border text-yard-muted hover:border-yard-borderLight"
+                )}
+              >
+                Number This Train
+              </button>
+            </div>
+            {importMode === "train" && (
+              <input
+                value={trainNumber}
+                onChange={(e) => setTrainNumber(e.target.value)}
+                placeholder="Train number (e.g. 42)"
+                className="w-full h-9 px-2.5 rounded-md bg-yard-bg border border-yard-border text-sm focus:border-train outline-none"
+              />
+            )}
+          </div>
+
           <div className="flex gap-3">
             <Button
               variant="secondary"
@@ -232,13 +372,34 @@ export function PasteCSVModal({ open, onClose }: PasteCSVModalProps) {
             </Button>
             <Button
               className="flex-1"
-              disabled={validRows.length === 0}
+              disabled={
+                validRows.length === 0 ||
+                (importMode === "train" && trainNumber.trim() === "")
+              }
               onClick={handleImport}
             >
-              Import ({validRows.length})
+              {importMode === "train"
+                ? `Stage Train ${trainNumber.trim() || "…"} (${validRows.length})`
+                : `Import (${validRows.length})`}
             </Button>
           </div>
         </div>
+      )}
+
+      {stage === "checking" && (
+        <div className="py-12 text-center">
+          <div className="h-8 w-8 mx-auto rounded-full border-2 border-amber border-t-transparent animate-spin mb-4" />
+          <p className="text-sm text-yard-muted">Checking for existing equipment…</p>
+        </div>
+      )}
+
+      {stage === "duplicates" && (
+        <DuplicateResolutionPanel
+          duplicates={duplicates}
+          showTrainNumber={importMode === "train"}
+          onCancel={() => setStage("review")}
+          onConfirm={(resolved) => writeImport(freshRows.map(rowToPayload), resolved)}
+        />
       )}
 
       {stage === "importing" && (
