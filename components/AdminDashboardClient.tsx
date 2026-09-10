@@ -14,7 +14,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAutoReloadOnNewDeploy } from "@/hooks/useAutoReloadOnNewDeploy";
 import { useTrailers } from "@/hooks/useTrailers";
 import { createClient } from "@/lib/supabase/client";
-import { cn } from "@/lib/utils";
+import { cn, trainColor } from "@/lib/utils";
 import { Profile, Trailer } from "@/lib/types";
 import { ArrowUpCircle, CheckSquare, LogOut, Plus, RefreshCw, Search, Trash2, Upload, X, FileText, Snowflake, TrainFront } from "lucide-react";
 import Link from "next/link";
@@ -78,19 +78,17 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
   // group is whichever one the first item belongs to.
   useEffect(() => {
     if (atRail.length === 0 && staged.length > 0) {
-      const nextTrain = staged[0].train_number;
-      if (nextTrain) {
-        promoteTrain(nextTrain);
-      }
+      promoteTrain(staged[0].train_number);
     }
   }, [atRail.length, staged.length]);
 
-  async function promoteTrain(trainNumber: string) {
-    await supabase
-      .from("trailers")
-      .update({ status: "at_rail" })
-      .eq("train_number", trainNumber)
-      .eq("status", "staged");
+  // trainNumber is null for a train staged without a number (shown on the
+  // dashboard as a generic "Staged Train") — matched with .is() instead of
+  // .eq() since Postgres null never equals anything, including itself.
+  async function promoteTrain(trainNumber: string | null) {
+    let q = supabase.from("trailers").update({ status: "at_rail" }).eq("status", "staged");
+    q = trainNumber ? q.eq("train_number", trainNumber) : q.is("train_number", null);
+    await q;
   }
 
   const matches = (t: Trailer) =>
@@ -103,13 +101,13 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
 
   // Group staged trailers by train_number, preserving the oldest-first order
   // useTrailers already sorted them in so the first group listed is the next
-  // one due to auto-promote.
-  const stagedTrains: { trainNumber: string; trailers: Trailer[] }[] = [];
+  // one due to auto-promote. Every un-numbered staged trailer lands in one
+  // shared null-keyed group, shown as a generic "Staged Train".
+  const stagedTrains: { trainNumber: string | null; trailers: Trailer[] }[] = [];
   for (const t of filteredStaged) {
-    const key = t.train_number ?? "—";
-    let group = stagedTrains.find((g) => g.trainNumber === key);
+    let group = stagedTrains.find((g) => g.trainNumber === t.train_number);
     if (!group) {
-      group = { trainNumber: key, trailers: [] };
+      group = { trainNumber: t.train_number, trailers: [] };
       stagedTrains.push(group);
     }
     group.trailers.push(t);
@@ -458,16 +456,29 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
                 <span className="text-xs text-yard-faint">{filteredStaged.length}</span>
               </div>
               <div className="space-y-6">
-                {stagedTrains.map((group) => (
-                  <div key={group.trainNumber}>
+                {stagedTrains.map((group) => {
+                  // Un-numbered staged batches all share one generic purple —
+                  // there's no number to derive a distinct color from.
+                  const color = group.trainNumber ? trainColor(group.trainNumber) : "#9B6BFF";
+                  const label = group.trainNumber ? `Train ${group.trainNumber}` : "Staged Train";
+                  return (
+                  <div key={group.trainNumber ?? "unnumbered"}>
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="h-2 w-2 rounded-full bg-train" />
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{ backgroundColor: color }}
+                      />
                       <h3 className="font-display text-xs uppercase tracking-widest text-yard-muted">
-                        Train {group.trainNumber} ({group.trailers.length})
+                        {label} ({group.trailers.length})
                       </h3>
                       <button
                         onClick={() => promoteTrain(group.trainNumber)}
-                        className="ml-2 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-card bg-train/15 border border-train/40 text-train text-xs font-semibold hover:bg-train/25"
+                        className="ml-2 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-card text-xs font-semibold border"
+                        style={{
+                          backgroundColor: `${color}26`,
+                          borderColor: `${color}66`,
+                          color,
+                        }}
                       >
                         <ArrowUpCircle size={13} /> Promote to At Rail
                       </button>
@@ -494,7 +505,8 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
                       ))}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
