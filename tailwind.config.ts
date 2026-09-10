@@ -38,6 +38,13 @@ const config: Config = {
           DEFAULT: "#FF6B35",
           dim: "#8A3B1D",
         },
+        // Staged/upcoming-train trailers — distinct from the amber used for
+        // regular At Rail trailers, so a card's left stripe alone tells you
+        // it's part of a not-yet-promoted train.
+        train: {
+          DEFAULT: "#9B6BFF",
+          dim: "#4A3380",
+        },
       },
       fontFamily: {
         display: ["var(--font-display)", "sans-serif"],
