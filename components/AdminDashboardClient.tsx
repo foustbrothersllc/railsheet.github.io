@@ -16,7 +16,7 @@ import { useTrailers } from "@/hooks/useTrailers";
 import { createClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 import { Profile, Trailer } from "@/lib/types";
-import { CheckSquare, LogOut, Plus, RefreshCw, Search, Trash2, Upload, X, FileText, Snowflake } from "lucide-react";
+import { ArrowUpCircle, CheckSquare, LogOut, Plus, RefreshCw, Search, Trash2, Upload, X, FileText, Snowflake, TrainFront } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 
@@ -29,7 +29,7 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
   const { profile: liveProfile, signOut } = useAuth();
   const profile = liveProfile ?? initialProfile;
   useAutoReloadOnNewDeploy();
-  const { atRail, cold, departed, refresh } = useTrailers(false);
+  const { atRail, cold, departed, staged, refresh } = useTrailers(false);
 
   const [editing, setEditing] = useState<Trailer | null>(null);
   const [flagging, setFlagging] = useState<Trailer | null>(null);
@@ -71,12 +71,49 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
       .or("is_cold.eq.true,is_wrong_dest.eq.true");
   }
 
+  // Mirrors the cold-release effect above: the moment At Rail empties out,
+  // promote just the earliest staged train (not every staged train) so the
+  // yard isn't left empty while a numbered train is sitting ready. staged is
+  // already sorted oldest-first by useTrailers, so the earliest train_number
+  // group is whichever one the first item belongs to.
+  useEffect(() => {
+    if (atRail.length === 0 && staged.length > 0) {
+      const nextTrain = staged[0].train_number;
+      if (nextTrain) {
+        promoteTrain(nextTrain);
+      }
+    }
+  }, [atRail.length, staged.length]);
+
+  async function promoteTrain(trainNumber: string) {
+    await supabase
+      .from("trailers")
+      .update({ status: "at_rail" })
+      .eq("train_number", trainNumber)
+      .eq("status", "staged");
+  }
+
   const matches = (t: Trailer) =>
     query.trim() === "" || t.equipment_number.includes(query.trim().toUpperCase());
 
   const filteredAtRail = atRail.filter(matches);
   const filteredCold = cold.filter(matches);
   const filteredDeparted = departed.filter(matches);
+  const filteredStaged = staged.filter(matches);
+
+  // Group staged trailers by train_number, preserving the oldest-first order
+  // useTrailers already sorted them in so the first group listed is the next
+  // one due to auto-promote.
+  const stagedTrains: { trainNumber: string; trailers: Trailer[] }[] = [];
+  for (const t of filteredStaged) {
+    const key = t.train_number ?? "—";
+    let group = stagedTrains.find((g) => g.trainNumber === key);
+    if (!group) {
+      group = { trainNumber: key, trailers: [] };
+      stagedTrains.push(group);
+    }
+    group.trailers.push(t);
+  }
 
   async function handleManualRefresh() {
     setRefreshing(true);
@@ -138,6 +175,14 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
       .eq("id", trailer.id);
   }
 
+  async function handlePromoteToAtRail(trailer: Trailer) {
+    await supabase
+      .from("trailers")
+      .update({ status: "at_rail" })
+      .eq("id", trailer.id)
+      .eq("status", "staged");
+  }
+
   async function handleDelete() {
     if (!deleting) return;
     setDeletingBusy(true);
@@ -164,10 +209,12 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
   }
 
   // Selects every trailer currently visible (respects the search filter),
-  // across At Rail, Cold, and Departed. Replaces the current selection
-  // rather than adding to it.
+  // across At Rail, Cold, Departed, and Staged. Replaces the current
+  // selection rather than adding to it.
   function selectAll() {
-    const ids = [...filteredAtRail, ...filteredCold, ...filteredDeparted].map((t) => t.id);
+    const ids = [...filteredAtRail, ...filteredCold, ...filteredDeparted, ...filteredStaged].map(
+      (t) => t.id
+    );
     setSelectedIds(new Set(ids));
   }
 
@@ -400,6 +447,57 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
               </PullToRefresh>
             </div>
           </div>
+
+          {stagedTrains.length > 0 && (
+            <div className="mt-6 pt-6 border-t border-yard-border shrink-0">
+              <div className="flex items-center gap-2 mb-3">
+                <TrainFront size={14} className="text-train" />
+                <h2 className="font-display text-sm uppercase tracking-widest text-yard-muted">
+                  Staged Trains
+                </h2>
+                <span className="text-xs text-yard-faint">{filteredStaged.length}</span>
+              </div>
+              <div className="space-y-6">
+                {stagedTrains.map((group) => (
+                  <div key={group.trainNumber}>
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="h-2 w-2 rounded-full bg-train" />
+                      <h3 className="font-display text-xs uppercase tracking-widest text-yard-muted">
+                        Train {group.trainNumber} ({group.trailers.length})
+                      </h3>
+                      <button
+                        onClick={() => promoteTrain(group.trainNumber)}
+                        className="ml-2 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-card bg-train/15 border border-train/40 text-train text-xs font-semibold hover:bg-train/25"
+                      >
+                        <ArrowUpCircle size={13} /> Promote to At Rail
+                      </button>
+                    </div>
+                    <div className="space-y-2.5">
+                      {group.trailers.map((t) => (
+                        <AdminTrailerCard
+                          key={t.id}
+                          trailer={t}
+                          profileId={profile.id}
+                          onRevert={() => handleRevert(t)}
+                          onEdit={() => setEditing(t)}
+                          onFlag={() => setFlagging(t)}
+                          onToggleHot={() => handleToggleHot(t)}
+                          onToggleCold={() => handleToggleCold(t)}
+                          onMarkDeparted={() => handleMarkDeparted(t)}
+                          onDelete={() => setDeleting(t)}
+                          onViewDetails={() => setSelectedTrailerDetail(t)}
+                          onPromoteToAtRail={() => handlePromoteToAtRail(t)}
+                          selectMode={selectMode}
+                          selected={selectedIds.has(t.id)}
+                          onToggleSelect={() => toggleSelected(t.id)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="lg:flex-[3] min-h-0">
