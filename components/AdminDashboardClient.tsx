@@ -216,6 +216,15 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
     setSelectedIds(new Set(ids));
   }
 
+  // Selects only what's currently visible in the At Rail column — the
+  // trailers actually at rail plus the Cold ones grouped underneath them,
+  // since that's one visual section on screen. Leaves Departed and Staged
+  // alone. Also replaces the current selection.
+  function selectAllAtRail() {
+    const ids = [...filteredAtRail, ...filteredCold].map((t) => t.id);
+    setSelectedIds(new Set(ids));
+  }
+
   async function handleBulkDelete() {
     if (selectedIds.size === 0) return;
     setBulkDeleting(true);
@@ -302,6 +311,16 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
                 className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-card bg-yard-panel border border-yard-border text-sm text-yard-text hover:border-yard-borderLight"
               >
                 Select All
+              </button>
+            )}
+            {selectMode && (
+              <button
+                onClick={selectAllAtRail}
+                title="Select all At Rail trailers"
+                aria-label="Select all At Rail trailers"
+                className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-card bg-yard-panel border border-yard-border text-sm text-yard-text hover:border-yard-borderLight"
+              >
+                Select At Rail
               </button>
             )}
             {selectMode && (
