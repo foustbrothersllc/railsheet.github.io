@@ -60,8 +60,8 @@ export default function LoginPage() {
               <label htmlFor="password" className="block text-xs font-medium text-yard-muted uppercase tracking-wide">
                 Password
               </label>
-              <Link href="/forgot-password" className="text-xs text-amber hover:underline">
-                Forgot password?
+              <Link href="/reset-with-code" className="text-xs text-amber hover:underline">
+                Have a reset code?
               </Link>
             </div>
             <input
