@@ -5,7 +5,7 @@ import { Trailer } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
-// The subset of fields an import actually writes — same set CsvImportModal
+// The subset of fields an import actually writes — same set PasteCSVModal
 // and PasteCSVModal already build their payload from, plus train_number
 // when the batch is being staged as a numbered train.
 export interface DuplicateIncoming {
