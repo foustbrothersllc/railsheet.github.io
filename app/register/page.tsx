@@ -38,6 +38,9 @@ export default function RegisterPage() {
       email,
       password,
       options: {
+        // Where the "Confirm your email" link sends the user afterwards.
+        // Must be listed in Supabase Auth > URL Configuration > Redirect URLs.
+        emailRedirectTo: `${window.location.origin}/login`,
         data: {
           first_name: firstName,
           last_name: lastName,
