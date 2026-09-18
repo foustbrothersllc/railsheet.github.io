@@ -3,7 +3,6 @@
 import { AddTrailerModal } from "@/components/AddTrailerModal";
 import { AdminTrailerCard } from "@/components/AdminTrailerCard";
 import { ConfirmModal } from "@/components/ConfirmModal";
-import { CsvImportModal } from "@/components/CsvImportModal";
 import { EditTrailerModal } from "@/components/EditTrailerModal";
 import { FlagTrailerModal } from "@/components/FlagTrailerModal";
 import { PullToRefresh } from "@/components/PullToRefresh";
@@ -16,7 +15,7 @@ import { useTrailers } from "@/hooks/useTrailers";
 import { createClient } from "@/lib/supabase/client";
 import { cn, trainColor } from "@/lib/utils";
 import { Profile, Trailer } from "@/lib/types";
-import { ArrowUpCircle, CheckSquare, LogOut, Plus, RefreshCw, Search, Trash2, Upload, X, FileText, Snowflake, TrainFront } from "lucide-react";
+import { ArrowUpCircle, CheckSquare, LogOut, Plus, RefreshCw, Search, Trash2, X, FileText, Snowflake, TrainFront } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 
@@ -35,7 +34,6 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
   const [flagging, setFlagging] = useState<Trailer | null>(null);
   const [deleting, setDeleting] = useState<Trailer | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [showImport, setShowImport] = useState(false);
   const [showPasteCSV, setShowPasteCSV] = useState(false);
   const [selectedTrailerDetail, setSelectedTrailerDetail] = useState<Trailer | null>(null);
   const [deletingBusy, setDeletingBusy] = useState(false);
@@ -269,14 +267,8 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
               <Plus size={15} /> Add Trailer
             </button>
             <button
-              onClick={() => setShowImport(true)}
-              className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-card bg-amber text-yard-bg text-sm font-semibold hover:bg-amber/90"
-            >
-              <Upload size={15} /> Import CSV / Excel
-            </button>
-            <button
               onClick={() => setShowPasteCSV(true)}
-              className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-card bg-yard-panel border border-yard-border text-sm text-yard-text hover:border-yard-borderLight"
+              className="inline-flex items-center gap-1.5 h-9 px-3.5 rounded-card bg-amber text-yard-bg text-sm font-semibold hover:bg-amber/90"
             >
               <FileText size={15} /> Paste CSV
             </button>
@@ -539,7 +531,6 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
       <AddTrailerModal open={showAddModal} onClose={() => setShowAddModal(false)} />
       <EditTrailerModal trailer={editing} onClose={() => setEditing(null)} />
       <FlagTrailerModal trailer={flagging} onClose={() => setFlagging(null)} />
-      <CsvImportModal open={showImport} onClose={() => setShowImport(false)} />
       <PasteCSVModal open={showPasteCSV} onClose={() => setShowPasteCSV(false)} />
       <AdminTrailerDetailModal
         trailer={selectedTrailerDetail}
