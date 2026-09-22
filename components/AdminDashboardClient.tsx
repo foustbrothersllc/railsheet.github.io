@@ -15,7 +15,7 @@ import { useTrailers } from "@/hooks/useTrailers";
 import { createClient } from "@/lib/supabase/client";
 import { cn, trainColor } from "@/lib/utils";
 import { Profile, Trailer } from "@/lib/types";
-import { ArrowUpCircle, CheckSquare, LogOut, Plus, RefreshCw, Search, Trash2, X, FileText, Snowflake, TrainFront } from "lucide-react";
+import { ArrowUpCircle, CheckSquare, LogOut, Plus, RefreshCw, Search, Trash2, Truck, X, FileText, Snowflake, TrainFront } from "lucide-react";
 import Link from "next/link";
 import { useState, useEffect, useRef } from "react";
 
@@ -248,13 +248,26 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
             Admin
           </span>
         </div>
-        <button
-          onClick={signOut}
-          aria-label="Sign out"
-          className="h-10 w-10 flex items-center justify-center rounded-full text-yard-muted hover:text-yard-text hover:bg-yard-panel"
-        >
-          <LogOut size={18} />
-        </button>
+        <div className="flex items-center gap-1">
+          {/* Switch to the driver view. Hidden on large screens, where the
+              full admin board fits and is the point. The way back is the
+              shield icon in the driver header (NavShield). */}
+          <Link
+            href="/dashboard"
+            aria-label="Switch to driver view"
+            title="Switch to driver view"
+            className="lg:hidden h-10 w-10 flex items-center justify-center rounded-full text-amber hover:bg-amber/10 transition-colors"
+          >
+            <Truck size={20} strokeWidth={2} />
+          </Link>
+          <button
+            onClick={signOut}
+            aria-label="Sign out"
+            className="h-10 w-10 flex items-center justify-center rounded-full text-yard-muted hover:text-yard-text hover:bg-yard-panel"
+          >
+            <LogOut size={18} />
+          </button>
+        </div>
       </header>
 
       <div className="flex-1 min-h-0 flex flex-col lg:flex-row">
