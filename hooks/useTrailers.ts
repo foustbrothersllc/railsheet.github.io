@@ -20,6 +20,10 @@ const isHiddenLikeCold = (t: Trailer) => t.is_cold || t.is_wrong_dest;
 // reload: the module state survives that navigation, so a subscription that
 // fed only the component that happened to create it would leave the view
 // they switched INTO frozen on a stale snapshot.
+//
+// Nothing in here ever reloads the page. The only thing that happens on an
+// update is that these lists are replaced in place, so open modals, search
+// text, selections and scroll position are all left alone.
 interface Listener {
   // Drivers never see Cold trailers; the admin board does. Each caller keeps
   // its own preference so one shared snapshot can serve both.
@@ -31,16 +35,22 @@ interface Listener {
   setLoading: (v: boolean) => void;
 }
 
+type Channel = ReturnType<ReturnType<typeof createClient>["channel"]>;
+
 const listeners = new Set<Listener>();
 
-let globalSubscription: ReturnType<ReturnType<typeof createClient>["channel"]> | null = null;
+let globalSubscription: Channel | null = null;
+let subscribePromise: Promise<void> | null = null;
+let retryTimer: ReturnType<typeof setTimeout> | null = null;
+let retryAttempt = 0;
+
 let globalAtRail: Trailer[] = [];
 let globalCold: Trailer[] = [];
 let globalDeparted: Trailer[] = [];
 let globalStaged: Trailer[] = [];
 let hasSnapshot = false;
 let isLoading = false;
-let debounceRef: NodeJS.Timeout | null = null;
+let debounceRef: ReturnType<typeof setTimeout> | null = null;
 
 // Lazily created so importing this module never touches browser APIs during SSR.
 let client: ReturnType<typeof createClient> | null = null;
@@ -122,20 +132,89 @@ async function fetchTrailers() {
   if (trailers) applySnapshot(trailers as Trailer[]);
 }
 
-function subscribeToChanges() {
-  if (globalSubscription) return;
+/** Closes the current channel without letting its CLOSED status trigger a retry. */
+function teardown() {
+  const ch = globalSubscription;
+  // Nulled first: the status callback ignores any channel that is no longer
+  // the current one, so the CLOSED that removeChannel triggers is a no-op.
+  globalSubscription = null;
+  subscribePromise = null;
+  if (ch) void db().removeChannel(ch);
+}
 
-  // Claimed before the await so two callers mounting in the same tick can't
-  // both open a channel.
-  globalSubscription = db()
-    .channel("trailer-changes-v3")
-    .on("postgres_changes", { event: "*", schema: "public", table: "trailers" }, () => {
-      if (debounceRef) clearTimeout(debounceRef);
-      debounceRef = setTimeout(() => {
-        void fetchTrailers();
-      }, 500);
-    })
-    .subscribe();
+function scheduleRetry() {
+  if (retryTimer) return;
+  // 1s, 2s, 4s … capped at 30s, so a phone that lost signal in the yard keeps
+  // trying without hammering the connection.
+  const delay = Math.min(30_000, 1_000 * 2 ** retryAttempt);
+  retryAttempt++;
+  retryTimer = setTimeout(() => {
+    retryTimer = null;
+    teardown();
+    void ensureSubscribed();
+  }, delay);
+}
+
+/**
+ * Opens the tab's realtime channel, once. Resolves as soon as the channel is
+ * live OR has failed, so a caller never hangs waiting on a dead socket.
+ *
+ * On reaching SUBSCRIBED it takes a fresh snapshot. That is deliberate: a row
+ * committed before the channel finished joining produces no event at all, so
+ * without this the board would sit on pre-join data until some later, unrelated
+ * change happened to arrive. Same reason it runs after a reconnect — events
+ * that fired while the socket was down are gone.
+ */
+function ensureSubscribed(): Promise<void> {
+  if (subscribePromise) return subscribePromise;
+
+  subscribePromise = (async () => {
+    // Realtime authorizes with whatever token the client holds at join time,
+    // and an anonymous join has its postgres_changes events filtered out by
+    // RLS. getSession() reads local storage, so this costs nothing.
+    await db().auth.getSession();
+
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (!settled) {
+          settled = true;
+          resolve();
+        }
+      };
+
+      const ch = db()
+        .channel("trailer-changes-v3")
+        .on("postgres_changes", { event: "*", schema: "public", table: "trailers" }, () => {
+          if (debounceRef) clearTimeout(debounceRef);
+          debounceRef = setTimeout(() => {
+            void fetchTrailers();
+          }, 500);
+        });
+
+      globalSubscription = ch;
+
+      ch.subscribe((status: string) => {
+        // A channel from a previous attempt that is still winding down.
+        if (globalSubscription !== ch) return;
+
+        if (status === "SUBSCRIBED") {
+          retryAttempt = 0;
+          done();
+          void fetchTrailers();
+          return;
+        }
+
+        if (status === "CHANNEL_ERROR" || status === "TIMED_OUT" || status === "CLOSED") {
+          console.warn(`[rail-sheet] trailer realtime ${status} — reconnecting`);
+          done();
+          scheduleRetry();
+        }
+      });
+    });
+  })();
+
+  return subscribePromise;
 }
 
 export function useTrailers(hideColdfromDrivers = true) {
@@ -161,28 +240,30 @@ export function useTrailers(hideColdfromDrivers = true) {
     listeners.add(listener);
 
     // Paint whatever this tab already has, so switching views is instant
-    // rather than showing an empty board while the refetch lands.
+    // rather than showing an empty board while the fetch lands.
     if (hasSnapshot) {
       pushTo(listener);
       setLoading(false);
     }
 
-    // Make sure this tab has a live channel. On a view switch the channel from
-    // the previous view is still open and is reused as-is.
-    subscribeToChanges();
+    let cancelled = false;
 
-    if (!hasSnapshot) {
-      if (!isLoading) {
-        setLoadingAll(true);
-        void fetchTrailers().finally(() => setLoadingAll(false));
-      }
-    } else {
-      // We're showing a snapshot that could be as old as whenever the other
-      // view loaded it, so refresh in the background.
-      void fetchTrailers();
-    }
+    (async () => {
+      if (!hasSnapshot && !isLoading) setLoadingAll(true);
+
+      // Fetch and subscribe in parallel rather than waiting on the socket:
+      // the Supabase project can be cold (see the keep-alive cron in
+      // vercel.json) and a slow websocket join would otherwise hold up the
+      // first paint. ensureSubscribed() takes its own snapshot once the
+      // channel is actually live, which is what covers the join gap.
+      void ensureSubscribed();
+      await fetchTrailers();
+
+      if (!cancelled) setLoadingAll(false);
+    })();
 
     return () => {
+      cancelled = true;
       listeners.delete(listener);
     };
   }, [hideColdfromDrivers]);
