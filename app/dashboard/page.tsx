@@ -21,7 +21,11 @@ export default async function DashboardPage() {
 
   if (!profile) redirect("/login");
   if (!profile.is_approved) redirect("/pending");
-  if (profile.is_admin) redirect("/admin");
+  // Admins are deliberately allowed through here: this is the "driver view"
+  // they switch into from the admin header (useful on a phone, where the
+  // admin board is too dense). The shield icon in the driver header
+  // (components/NavShield.tsx) is how they get back to /admin. Note that "/"
+  // still sends admins to /admin, so this only happens on purpose.
 
   return <DashboardClient initialProfile={profile} />;
 }
