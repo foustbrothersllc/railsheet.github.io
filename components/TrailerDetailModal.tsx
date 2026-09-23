@@ -79,6 +79,9 @@ export function TrailerDetailModal({ trailer, profile, onClose }: TrailerDetailM
         assigned_to_id: profile.id,
         assigned_driver_name: `${profile.first_name} ${profile.last_name}`,
         assigned_driver_emp_id: profile.employee_id,
+        // This is a real pickup even when an admin does it from the driver
+        // view, so it is never flagged as an admin close-out.
+        departed_by_admin: false,
       })
       .eq("id", trailer.id)
       .eq("status", "at_rail");
@@ -170,7 +173,14 @@ export function TrailerDetailModal({ trailer, profile, onClose }: TrailerDetailM
             <DetailRow label="Load %" value={`${trailer.load_percentage}%`} />
           )}
           {trailer.status === "departed" && trailer.assigned_driver_name && (
-            <DetailRow label="Driver" value={trailer.assigned_driver_name} />
+            <DetailRow
+              label="Departed by"
+              value={
+                trailer.departed_by_admin
+                  ? `${trailer.assigned_driver_name} (admin)`
+                  : trailer.assigned_driver_name
+              }
+            />
           )}
         </div>
         {error && (
