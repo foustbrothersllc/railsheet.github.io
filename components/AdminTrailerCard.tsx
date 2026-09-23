@@ -172,10 +172,19 @@ export function AdminTrailerCard({
           </p>
         )}
         {isDeparted && trailer.assigned_driver_name && (
-          <p className="flex items-center gap-1 text-xs text-depart mt-1">
+          <p className="flex flex-wrap items-center gap-1 text-xs text-depart mt-1">
             <User size={11} />
-            {trailer.assigned_driver_name} ({trailer.assigned_driver_emp_id}) ·{" "}
-            {formatRelativeTime(trailer.updated_at)}
+            <span>
+              {trailer.assigned_driver_name} ({trailer.assigned_driver_emp_id})
+            </span>
+            {/* Marks a load an admin cleared off the board rather than one a
+                driver actually picked up. */}
+            {trailer.departed_by_admin && (
+              <span className="text-[9px] font-semibold uppercase tracking-wide text-amber bg-amber/10 border border-amber/30 rounded-full px-1.5 py-px">
+                Admin
+              </span>
+            )}
+            <span>· {formatRelativeTime(trailer.updated_at)}</span>
           </p>
         )}
       </div>
