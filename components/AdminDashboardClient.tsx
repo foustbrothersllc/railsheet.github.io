@@ -14,6 +14,7 @@ import { useAutoReloadOnNewDeploy } from "@/hooks/useAutoReloadOnNewDeploy";
 import { useTrailers } from "@/hooks/useTrailers";
 import { createClient } from "@/lib/supabase/client";
 import { cn, trainColor } from "@/lib/utils";
+import { rememberView } from "@/lib/viewPreference";
 import { Profile, Trailer } from "@/lib/types";
 import { ArrowUpCircle, CheckSquare, LogOut, Plus, RefreshCw, Search, Trash2, Truck, X, FileText, Snowflake, TrainFront } from "lucide-react";
 import Link from "next/link";
@@ -29,6 +30,12 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
   const profile = liveProfile ?? initialProfile;
   useAutoReloadOnNewDeploy();
   const { atRail, cold, departed, staged, refresh } = useTrailers(false);
+
+  // Record that the admin board is where this admin is, so "/" brings them
+  // back here rather than always defaulting to it.
+  useEffect(() => {
+    rememberView("admin");
+  }, []);
 
   const [editing, setEditing] = useState<Trailer | null>(null);
   const [flagging, setFlagging] = useState<Trailer | null>(null);
