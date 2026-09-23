@@ -180,7 +180,14 @@ export function AdminTrailerDetailModal({
           <DetailRow label="Load %" value={`${trailer.load_percentage}%`} />
         )}
         {isDeparted && trailer.assigned_driver_name && (
-          <DetailRow label="Driver" value={trailer.assigned_driver_name} />
+          <DetailRow
+            label="Departed by"
+            value={
+              trailer.departed_by_admin
+                ? `${trailer.assigned_driver_name} (admin)`
+                : trailer.assigned_driver_name
+            }
+          />
         )}
 
         {/* Flag note */}
