@@ -9,9 +9,10 @@ import { useAutoReloadOnNewDeploy } from "@/hooks/useAutoReloadOnNewDeploy";
 import { usePresence } from "@/hooks/usePresence";
 import { useTrailers } from "@/hooks/useTrailers";
 import { cn } from "@/lib/utils";
+import { rememberView } from "@/lib/viewPreference";
 import { Profile, Trailer } from "@/lib/types";
 import { LogOut, Search, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface DashboardClientProps {
   initialProfile: Profile;
@@ -23,6 +24,13 @@ export function DashboardClient({ initialProfile }: DashboardClientProps) {
   usePresence(profile); // joins the shared presence channel so admins see this driver as active
   useAutoReloadOnNewDeploy(); // self-heal if this tab is left open across a deploy
   const { atRail, departed, loading, refresh } = useTrailers();
+
+  // Only admins have two views to choose between, so only they record one.
+  // Leaving a driver's preference unset means that if they're promoted later
+  // they start on the admin board instead of in driver view.
+  useEffect(() => {
+    if (profile.is_admin) rememberView("driver");
+  }, [profile.is_admin]);
   const [tab, setTab] = useState<"at_rail" | "departed">("at_rail");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Trailer | null>(null);
