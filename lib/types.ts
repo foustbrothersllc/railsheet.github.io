@@ -37,6 +37,12 @@ export interface Trailer {
   assigned_to_id: string | null;
   assigned_driver_name: string | null;
   assigned_driver_emp_id: string | null;
+  // True when an admin marked the load departed from the admin board, rather
+  // than a driver accepting it themselves. Recorded at write time instead of
+  // being derived from that person's current is_admin flag, because roles
+  // change — an admin who is later demoted shouldn't retroactively turn every
+  // load they closed out into a driver pickup.
+  departed_by_admin: boolean;
   status: TrailerStatus;
   created_at: string;
   updated_at: string;
