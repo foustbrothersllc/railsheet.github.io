@@ -125,6 +125,9 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
         assigned_to_id: null,
         assigned_driver_name: null,
         assigned_driver_emp_id: null,
+        // Back on the board and unclaimed again, so whoever departed it before
+        // — driver or admin — is no longer attached to it.
+        departed_by_admin: false,
         is_cold: false,
         is_wrong_dest: false,
       })
@@ -139,9 +142,13 @@ export function AdminDashboardClient({ initialProfile }: AdminDashboardClientPro
       .from("trailers")
       .update({
         status: "departed",
-        assigned_to_id: null,
-        assigned_driver_name: null,
-        assigned_driver_emp_id: null,
+        // Attributed the same way a driver pickup is, so the Departed list
+        // never has a nameless row. departed_by_admin is what keeps the record
+        // honest about who actually pulled the load vs who cleared it.
+        assigned_to_id: profile.id,
+        assigned_driver_name: `${profile.first_name} ${profile.last_name}`,
+        assigned_driver_emp_id: profile.employee_id,
+        departed_by_admin: true,
         is_cold: false,
         is_wrong_dest: false,
       })
